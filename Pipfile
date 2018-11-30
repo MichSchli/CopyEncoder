@@ -1,0 +1,18 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[dev-packages]
+
+[packages]
+mindblocks = {path = "./lib/Mindblocks-0.0.1-py3-none-any.whl"}
+tensorflow = "*"
+tensorflow-hub = "*"
+tensorflow-probability = "*"
+sparqlwrapper = "*"
+numpy = "*"
+
+[requires]
+python_version = "3.5"
+
