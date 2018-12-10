@@ -1,9 +1,28 @@
 gorm is king of denmark
+a is king of aland
+b is king of bland
+c is queen of cland
+d is queen of dland
+aq is queen of aland
+bq is queen of bland
+ck is king of cland
+dk is king of dland
 thyra is queen of denmark
-gorm made the jelling stones
 gorm speaks danish
 thyra speaks danish
-harald is the son of gorm and thyra
-thyra and gorm are the parents of harald
 gorm is married to thyra
 thyra is married to gorm
+john speaks danish
+mary speaks norwegian
+kurt speaks english
+james speaks russian
+harald is married to kurt
+daniel is married to alex
+kurt is married to harald
+bob is married to alice
+kurt speaks norwegian
+ivan speaks russian
+diego speaks italian
+michael speaks danish
+joost speaks dutch
+serhii speaks ukrainian

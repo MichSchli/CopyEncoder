@@ -12,7 +12,7 @@ tensorflow-hub = "*"
 tensorflow-probability = "*"
 sparqlwrapper = "*"
 numpy = "*"
+tqdm = "*"
 
 [requires]
 python_version = "3.5"
-

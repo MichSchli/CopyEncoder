@@ -1,0 +1,388 @@
+<block>
+    <configuration>
+        <variable name="max_iterations">
+            <default_value>200</default_value>
+        </variable>
+        <variable name="report_loss_every_n">
+            <default_value>1</default_value>
+        </variable>
+        <variable name="validate_every_n">
+            <default_value>50</default_value>
+        </variable>
+
+        <variable name="data_folder">
+        </variable>
+
+        <variable name="target_embedding_file">
+            <default_value>vocabulary.txt</default_value>
+        </variable>
+
+        <variable name="vocabulary_size">
+            <default_value>14</default_value>
+        </variable>
+        <variable name="attention_heads">
+            <default_value>1</default_value>
+        </variable>
+
+        <variable name="mode_folder">
+            <train_value>train</train_value>
+            <validate_value>train</validate_value>
+            <test_value>train</test_value>
+        </variable>
+
+    </configuration>
+    <canvas name="main">
+        <component name="source_reader" type="SentenceReader">
+            <file_path>$data_folder/$mode_folder/documents.txt</file_path>
+            <stop_token>&lt;/s&gt;</stop_token>
+            <start_token>&lt;s&gt;</start_token>
+        </component>
+        <component name="target_reader" type="SentenceReader">
+            <file_path>$data_folder/$mode_folder/documents.txt</file_path>
+            <stop_token>&lt;/s&gt;</stop_token>
+            <start_token>&lt;s&gt;</start_token>
+        </component>
+
+        <component name="batch_generator" type="SequenceBatchGenerator">
+            <batch_size>3</batch_size>
+            <prefer_reduce>True</prefer_reduce>
+            <shuffle>True</shuffle>
+            <reorder>False</reorder>
+        </component>
+        <edge>
+                <source socket="output">source_reader</source>
+                <target socket="reference_sequences">batch_generator</target>
+        </edge>
+
+        <component name="source_batcher" type="Batcher">
+            <lazy>True</lazy>
+        </component>
+        <edge>
+                <source socket="output">source_reader</source>
+                <target socket="data">source_batcher</target>
+        </edge>
+        <edge>
+                <source socket="batch">batch_generator</source>
+                <target socket="indexes">source_batcher</target>
+        </edge>
+        <component name="target_batcher" type="Batcher">
+            <lazy>True</lazy>
+        </component>
+        <edge>
+                <source socket="output">target_reader</source>
+                <target socket="data">target_batcher</target>
+        </edge>
+        <edge>
+                <source socket="batch">batch_generator</source>
+                <target socket="indexes">target_batcher</target>
+        </edge>
+
+        <component name="elmo" type="ElmoEmbedding">
+            <elmo_dir>elmo/</elmo_dir>
+        </component>
+        <edge>
+                <source socket="output">source_batcher</source>
+                <target socket="input">elmo</target>
+        </edge>
+
+        <component name="encoder" type="BiRnn" language="tensorflow">
+            <cell>lstm</cell>
+            <dimension>100</dimension>
+            <layers>1</layers>
+            <layer_dropout>0.3</layer_dropout>
+        </component>
+        <edge>
+                <source socket="word_embeddings">elmo</source>
+                <target socket="input">encoder</target>
+        </edge>
+
+        <component name="word_mlp" type="MultilayerPerceptron" language="tensorflow">
+            <dimensions>100,100,1</dimensions>
+        </component>
+        <edge>
+            <source socket="output">encoder</source>
+            <target socket="input">word_mlp</target>
+        </edge>
+
+        <component name="word_gates" type="Sigmoid" language="tensorflow">
+        </component>
+        <edge>
+            <source socket="output">word_mlp</source>
+            <target socket="input">word_gates</target>
+        </edge>
+
+        <component name="gate_print" type="DebugPrint" language="tensorflow">
+        </component>
+        <edge>
+            <source socket="output">word_gates</source>
+            <target socket="input">gate_print</target>
+        </edge>
+
+        <component name="attention_input" type="Arithmetic" language="tensorflow">
+            <operation>mul</operation>
+        </component>
+        <edge>
+                <source socket="output">gate_print</source>
+                <target socket="left">attention_input</target>
+        </edge>
+        <edge>
+                <source socket="output">encoder</source>
+                <target socket="right">attention_input</target>
+        </edge>
+
+        <component name="target_embedding" type="FileEmbeddings">
+            <file_path>$data_folder/$target_embedding_file</file_path>
+            <width>300</width>
+            <separator> </separator>
+            <unk_token included="2">&lt;unk&gt;</unk_token>
+        </component>
+        <component name="target_indexer" type="Indexer">
+            <input_type>sequence</input_type>
+        </component>
+        <edge>
+                <source socket="output">target_batcher</source>
+                <target socket="input">target_indexer</target>
+        </edge>
+        <edge>
+                <source socket="index">target_embedding</source>
+                <target socket="index">target_indexer</target>
+        </edge>
+
+        <component name="training_rnn" type="ScheduledSamplingRnn" language="tensorflow">
+            <stop_token>1</stop_token>
+            <graph canvas="decoder">decoder-graph</graph>
+            <socket type="in">embedding_vectors</socket>
+            <socket type="in">sentence_embeddings</socket>
+            <socket type="out">logits</socket>
+            <in_link feed="per_batch">sentence_embeddings->attention:sequence</in_link>
+            <in_link>embedding_vectors->encoder_embedding:vectors</in_link>
+            <out_link feed="loop">vocab_pred_print:output->logits</out_link>
+            <recurrence init="zero_tensor:1,100">decoder_lstm:layer_output_cs->previous_c:input</recurrence>
+            <recurrence init="zero_tensor:100">attention:output->previous_attention:input</recurrence>
+            <recurrence init="zero_tensor:1,100">decoder_lstm:layer_output_hs->previous_h:input</recurrence>
+            <recurrence init="zero_tensor:|int" teacher="true">argmax:output->input_token:input</recurrence>
+        </component>
+        <edge>
+                <source socket="vectors">target_embedding</source>
+                <target socket="embedding_vectors">training_rnn</target>
+        </edge>
+        <edge>
+                <source socket="output">attention_input</source>
+                <target socket="sentence_embeddings">training_rnn</target>
+        </edge>
+        <edge>
+                <source socket="output">target_indexer</source>
+                <target socket="teacher_inputs">training_rnn</target>
+        </edge>
+
+        <component name="const_1" type="Constant" language="tensorflow">
+            <value>1.0</value>
+            <type>float</type>
+        </component>
+
+        <component name="loss_weights" type="Arithmetic" language="tensorflow">
+            <operation>minus</operation>
+        </component>
+        <edge>
+                <source socket="output">const_1</source>
+                <target socket="left">loss_weights</target>
+        </edge>
+        <edge>
+                <source socket="output">gate_print</source>
+                <target socket="right">loss_weights</target>
+        </edge>
+
+        <component name="loss" type="WeightedCrossEntropy" language="tensorflow">
+            <sum_dimensions>1</sum_dimensions>
+        </component>
+        <edge>
+                <source socket="logits">training_rnn</source>
+                <target socket="logits">loss</target>
+        </edge>
+        <edge>
+                <source socket="output">loss_weights</source>
+                <target socket="weights">loss</target>
+        </edge>
+        <edge>
+                <source socket="output">target_indexer</source>
+                <target socket="labels">loss</target>
+        </edge>
+
+        <component name="reg" type="Sum" language="tensorflow">
+            <axis>1</axis>
+        </component>
+        <edge>
+                <source socket="output">gate_print</source>
+                <target socket="input">reg</target>
+        </edge>
+
+        <component name="word_gate_reg_scale" type="Constant" language="tensorflow">
+            <value>0.4</value>
+            <type>float</type>
+        </component>
+
+        <component name="word_gate_reg_scale_mul" type="Arithmetic" language="tensorflow">
+            <operation>mul</operation>
+        </component>
+        <edge>
+                <source socket="output">word_gate_reg_scale</source>
+                <target socket="left">word_gate_reg_scale_mul</target>
+        </edge>
+        <edge>
+                <source socket="output">reg</source>
+                <target socket="right">word_gate_reg_scale_mul</target>
+        </edge>
+
+        <component name="loss_and_reg" type="Arithmetic" language="tensorflow">
+            <operation>add</operation>
+            <mark socket="output">loss</mark>
+        </component>
+        <edge>
+                <source socket="output">loss</source>
+                <target socket="left">loss_and_reg</target>
+        </edge>
+        <edge>
+                <source socket="output">word_gate_reg_scale_mul</source>
+                <target socket="right">loss_and_reg</target>
+        </edge>
+
+        <component name="adam_upd" type="AdamUpdater" language="tensorflow">
+            <learning_rate>0.001</learning_rate>
+            <gradient_clip>1.0</gradient_clip>
+            <mark socket="update">update</mark>
+        </component>
+        <edge>
+                <source socket="output">loss_and_reg</source>
+                <target socket="loss">adam_upd</target>
+        </edge>
+
+        <component name="beam_search" type="BeamSearchDecoder" language="tensorflow">
+            <n_beams>3</n_beams>
+            <output_top_n>3</output_top_n>
+            <stop_token>1</stop_token>
+            <graph canvas="decoder">decoder-graph</graph>
+            <socket type="in">embedding_vectors</socket>
+            <socket type="in">sentence_embeddings</socket>
+            <vocabulary_size>$vocabulary_size</vocabulary_size>
+            <in_link feed="per_batch">sentence_embeddings->attention:sequence</in_link>
+            <in_link>embedding_vectors->encoder_embedding:vectors</in_link>
+            <recurrence init="zero_tensor:1,100">decoder_lstm:layer_output_cs->previous_c:input</recurrence>
+            <recurrence init="zero_tensor:100">attention:output->previous_attention:input</recurrence>
+            <recurrence init="zero_tensor:1,100">decoder_lstm:layer_output_hs->previous_h:input</recurrence>
+            <beam>vocab_pred_print:output->input_token:input</beam>
+        </component>
+        <edge>
+                <source socket="vectors">target_embedding</source>
+                <target socket="embedding_vectors">beam_search</target>
+        </edge>
+        <edge>
+                <source socket="output">attention_input</source>
+                <target socket="sentence_embeddings">beam_search</target>
+        </edge>
+
+        <component name="deindexer" type="DeIndexer">
+            <mark socket="output">prediction</mark>
+            <input_type>sequence</input_type>
+        </component>
+        <edge>
+                <source socket="predictions">beam_search</source>
+                <target socket="input">deindexer</target>
+        </edge>
+        <edge>
+                <source socket="index">target_embedding</source>
+                <target socket="index">deindexer</target>
+        </edge>
+    </canvas>
+    <canvas name="decoder">
+        <graph name="decoder-graph">
+            <component name="previous_c" type="PassThrough" language="tensorflow">
+            </component>
+            <component name="previous_h" type="PassThrough" language="tensorflow">
+            </component>
+            <component name="previous_attention" type="PassThrough" language="tensorflow">
+            </component>
+            <component name="input_token" type="PassThrough" language="tensorflow">
+            </component>
+
+            <component name="encoder_embedding" type="EmbeddingLookup" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">input_token</source>
+                <target socket="indexes">encoder_embedding</target>
+            </edge>
+
+            <component name="input_feed" type="Concat" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">encoder_embedding</source>
+                <target socket="left">input_feed</target>
+            </edge>
+            <edge>
+                <source socket="output">previous_attention</source>
+                <target socket="right">input_feed</target>
+            </edge>
+
+            <component name="decoder_lstm" type="LstmCell" language="tensorflow">
+                <dimension>100</dimension>
+            </component>
+            <edge>
+                <source socket="output">input_feed</source>
+                <target socket="input_x">decoder_lstm</target>
+            </edge>
+            <edge>
+                <source socket="output">previous_c</source>
+                <target socket="previous_c">decoder_lstm</target>
+            </edge>
+            <edge>
+                <source socket="output">previous_h</source>
+                <target socket="previous_h">decoder_lstm</target>
+            </edge>
+
+            <component name="attention" type="Attention" language="tensorflow">
+                <heads>$attention_heads</heads>
+                <output_dim>100</output_dim>
+                <scoring>bilinear</scoring>
+            </component>
+            <edge>
+                <source socket="output_h">decoder_lstm</source>
+                <target socket="key">attention</target>
+            </edge>
+
+            <component name="mlp" type="MultilayerPerceptron" language="tensorflow">
+            <dimensions>100,$vocabulary_size</dimensions>
+            </component>
+            <edge>
+                <source socket="output">attention</source>
+                <target socket="input">mlp</target>
+            </edge>
+
+            <component name="unk_mask" type="VocabMask" language="tensorflow">
+                <mask_dimensions>2</mask_dimensions>
+            </component>
+            <edge>
+                <source socket="output">mlp</source>
+                <target socket="input">unk_mask</target>
+            </edge>
+
+            <component name="vocab_pred_print" type="DebugPrint" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">unk_mask</source>
+                <target socket="input">vocab_pred_print</target>
+            </edge>
+
+            <component name="softmax" type="Softmax" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">unk_mask</source>
+                <target socket="input">softmax</target>
+            </edge>
+            <component name="argmax" type="Argmax" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">softmax</source>
+                <target socket="input">argmax</target>
+            </edge>
+        </graph>
+    </canvas>
+</block>

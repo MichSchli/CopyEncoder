@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "14a928574d747e4692e397c753a4f1448d5ece9b49a745bed91fb17d37b3f292"
+            "sha256": "57aa9585eca727e0de2355f0726f63cfb8cf37edaaf134551f5bff0c44e07f2c"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -251,10 +251,10 @@
         },
         "tensorflow-hub": {
             "hashes": [
-                "sha256:d87fa4b32e6b150fbf39f54bdcc46deaa6c9fb44733941c73063a971dd19d360"
+                "sha256:41c3c231fa01a061fbc0def3b9f3b4f13379e442f080fec0810a994936fe68af"
             ],
             "index": "pypi",
-            "version": "==0.1.1"
+            "version": "==0.2.0"
         },
         "tensorflow-probability": {
             "hashes": [
@@ -268,6 +268,14 @@
                 "sha256:1d6d69ce66211143803fbc56652b41d73b4a400a2891d7bf7a1cdf4c02de613b"
             ],
             "version": "==1.1.0"
+        },
+        "tqdm": {
+            "hashes": [
+                "sha256:3c4d4a5a41ef162dd61f1edb86b0e1c7859054ab656b2e7c7b77e7fbf6d9f392",
+                "sha256:5b4d5549984503050883bc126280b386f5f4ca87e6c023c5d015655ad75bdebb"
+            ],
+            "index": "pypi",
+            "version": "==4.28.1"
         },
         "werkzeug": {
             "hashes": [
