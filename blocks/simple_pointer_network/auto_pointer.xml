@@ -1,10 +1,10 @@
 <block>
     <configuration>
         <variable name="max_iterations">
-            <default_value>2000</default_value>
+            <default_value>200</default_value>
         </variable>
         <variable name="validate_every_n">
-            <default_value>500</default_value>
+            <default_value>10</default_value>
         </variable>
         <variable name="data_folder">
         </variable>
@@ -13,10 +13,10 @@
         </variable>
 
         <variable name="known_vocabulary_size">
-            <default_value>52</default_value>
+            <default_value>15</default_value>
         </variable>
         <variable name="full_vocabulary_size">
-            <default_value>56</default_value>
+            <default_value>47</default_value>
         </variable>
         <variable name="attention_heads">
             <default_value>1</default_value>
@@ -24,20 +24,106 @@
     </configuration>
     <canvas name="main">
         <component name="source_reader" type="SentenceReader">
-            <file_path>$data_folder/src.txt</file_path>
-            <stop_token>EOS</stop_token>
+            <file_path>$data_folder/documents.txt</file_path>
+            <stop_token>&lt;/s&gt;</stop_token>
+            <start_token>&lt;s&gt;</start_token>
         </component>
         <component name="target_reader" type="SentenceReader">
-            <file_path>$data_folder/tgt.txt</file_path>
-            <stop_token>EOS</stop_token>
+            <file_path>$data_folder/documents.txt</file_path>
+            <stop_token>&lt;/s&gt;</stop_token>
+            <start_token>&lt;s&gt;</start_token>
         </component>
 
-        <component name="embedding" type="FileEmbeddings">
+        <component name="batch_generator" type="SequenceBatchGenerator">
+            <batch_size>5</batch_size>
+            <prefer_reduce>True</prefer_reduce>
+            <shuffle>True</shuffle>
+            <reorder>False</reorder>
+        </component>
+        <edge>
+                <source socket="output">source_reader</source>
+                <target socket="reference_sequences">batch_generator</target>
+        </edge>
+
+        <component name="source_batcher" type="Batcher">
+            <lazy>True</lazy>
+        </component>
+        <edge>
+                <source socket="output">source_reader</source>
+                <target socket="data">source_batcher</target>
+        </edge>
+        <edge>
+                <source socket="batch">batch_generator</source>
+                <target socket="indexes">source_batcher</target>
+        </edge>
+        <component name="target_batcher" type="Batcher">
+            <lazy>True</lazy>
+        </component>
+        <edge>
+                <source socket="output">target_reader</source>
+                <target socket="data">target_batcher</target>
+        </edge>
+        <edge>
+                <source socket="batch">batch_generator</source>
+                <target socket="indexes">target_batcher</target>
+        </edge>
+
+        <component name="elmo" type="ElmoEmbedding">
+            <elmo_dir>elmo/</elmo_dir>
+        </component>
+        <edge>
+                <source socket="output">source_batcher</source>
+                <target socket="input">elmo</target>
+        </edge>
+
+        <component name="encoder" type="BiRnn" language="tensorflow">
+            <cell>lstm</cell>
+            <dimension>100</dimension>
+        </component>
+        <edge>
+                <source socket="word_embeddings">elmo</source>
+                <target socket="input">encoder</target>
+        </edge>
+
+        <component name="word_mlp" type="MultilayerPerceptron" language="tensorflow">
+            <dimensions>100,100,1</dimensions>
+        </component>
+        <edge>
+            <source socket="output">encoder</source>
+            <target socket="input">word_mlp</target>
+        </edge>
+
+        <component name="word_gates" type="Sigmoid" language="tensorflow">
+        </component>
+        <edge>
+            <source socket="output">word_mlp</source>
+            <target socket="input">word_gates</target>
+        </edge>
+
+        <component name="gate_print" type="DebugPrint" language="tensorflow">
+        </component>
+        <edge>
+            <source socket="output">word_gates</source>
+            <target socket="input">gate_print</target>
+        </edge>
+
+        <component name="attention_input" type="Arithmetic" language="tensorflow">
+            <operation>mul</operation>
+        </component>
+        <edge>
+                <source socket="output">gate_print</source>
+                <target socket="left">attention_input</target>
+        </edge>
+        <edge>
+                <source socket="output">encoder</source>
+                <target socket="right">attention_input</target>
+        </edge>
+
+        <component name="target_embedding" type="FileEmbeddings">
             <file_path>$embedding_folder/glove.840B.300d.txt</file_path>
             <width>300</width>
             <separator> </separator>
-            <token_list>$data_folder/vocab_no_unks.txt</token_list>
-            <stop_token>EOS</stop_token>
+            <token_list>$data_folder/vocabulary.txt</token_list>
         </component>
         <component name="source_indexer" type="Indexer">
             <input_type>sequence</input_type>
@@ -58,28 +144,8 @@
                 <target socket="input">target_indexer</target>
         </edge>
         <edge>
-                <source socket="index">embedding</source>
+                <source socket="index">target_embedding</source>
                 <target socket="index">target_indexer</target>
-        </edge>
-
-        <component name="embedding_lookup" type="EmbeddingLookup" language="tensorflow">
-        </component>
-        <edge>
-                <source socket="output">source_indexer</source>
-                <target socket="indexes">embedding_lookup</target>
-        </edge>
-        <edge>
-                <source socket="vectors">embedding</source>
-                <target socket="vectors">embedding_lookup</target>
-        </edge>
-
-        <component name="encoder" type="BiRnn" language="tensorflow">
-            <cell>lstm</cell>
-            <dimension>100</dimension>
-        </component>
-        <edge>
-                <source socket="output">embedding_lookup</source>
-                <target socket="input">encoder</target>
         </edge>
 
         <component name="training_rnn" type="ScheduledSamplingRnn" language="tensorflow">
