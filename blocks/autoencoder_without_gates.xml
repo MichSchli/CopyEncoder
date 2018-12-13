@@ -118,18 +118,6 @@
             <target socket="input">gate_print</target>
         </edge>
 
-        <component name="attention_input" type="Arithmetic" language="tensorflow">
-            <operation>mul</operation>
-        </component>
-        <edge>
-                <source socket="output">gate_print</source>
-                <target socket="left">attention_input</target>
-        </edge>
-        <edge>
-                <source socket="output">encoder</source>
-                <target socket="right">attention_input</target>
-        </edge>
-
         <component name="target_embedding" type="FileEmbeddings">
             <file_path>$data_folder/$target_embedding_file</file_path>
             <width>300</width>
@@ -167,7 +155,7 @@
                 <target socket="embedding_vectors">training_rnn</target>
         </edge>
         <edge>
-                <source socket="output">attention_input</source>
+                <source socket="output">encoder</source>
                 <target socket="sentence_embeddings">training_rnn</target>
         </edge>
         <edge>
@@ -276,7 +264,7 @@
                 <target socket="embedding_vectors">beam_search</target>
         </edge>
         <edge>
-                <source socket="output">attention_input</source>
+                <source socket="output">encoder</source>
                 <target socket="sentence_embeddings">beam_search</target>
         </edge>
 
