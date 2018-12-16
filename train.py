@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser(description='Train (and test) a model with a gi
 #parser.add_argument('--block')
 args = parser.parse_args()
 
-block_filepath = "blocks/autoencoder_without_gates.xml"
+block_filepath = "blocks/simple_pointer_network/auto_pointer.xml"
 block_name = ".".join(block_filepath.split('/')[-1].split(".")[:-1])
 
 data_filepath = "data/toy"

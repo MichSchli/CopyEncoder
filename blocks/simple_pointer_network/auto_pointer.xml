@@ -3,13 +3,22 @@
         <variable name="max_iterations">
             <default_value>200</default_value>
         </variable>
+        <variable name="report_loss_every_n">
+            <default_value>1</default_value>
+        </variable>
         <variable name="validate_every_n">
-            <default_value>10</default_value>
+            <default_value>20</default_value>
         </variable>
         <variable name="data_folder">
         </variable>
 
         <variable name="embedding_folder">
+        </variable>
+
+        <variable name="mode_folder">
+            <train_value>train</train_value>
+            <validate_value>train</validate_value>
+            <test_value>train</test_value>
         </variable>
 
         <variable name="known_vocabulary_size">
@@ -21,15 +30,19 @@
         <variable name="attention_heads">
             <default_value>1</default_value>
         </variable>
+
+        <variable name="target_embedding_file">
+            <default_value>vocabulary.txt</default_value>
+        </variable>
     </configuration>
     <canvas name="main">
         <component name="source_reader" type="SentenceReader">
-            <file_path>$data_folder/documents.txt</file_path>
+            <file_path>$data_folder/$mode_folder/documents.txt</file_path>
             <stop_token>&lt;/s&gt;</stop_token>
             <start_token>&lt;s&gt;</start_token>
         </component>
         <component name="target_reader" type="SentenceReader">
-            <file_path>$data_folder/documents.txt</file_path>
+            <file_path>$data_folder/$mode_folder/documents.txt</file_path>
             <stop_token>&lt;/s&gt;</stop_token>
             <start_token>&lt;s&gt;</start_token>
         </component>
@@ -120,27 +133,27 @@
         </edge>
 
         <component name="target_embedding" type="FileEmbeddings">
-            <file_path>$embedding_folder/glove.840B.300d.txt</file_path>
+            <file_path>$data_folder/$target_embedding_file</file_path>
             <width>300</width>
             <separator> </separator>
-            <token_list>$data_folder/vocabulary.txt</token_list>
+            <unk_token included="2">&lt;unk&gt;</unk_token>
         </component>
         <component name="source_indexer" type="Indexer">
             <input_type>sequence</input_type>
         </component>
         <edge>
-                <source socket="output">source_reader</source>
+                <source socket="output">source_batcher</source>
                 <target socket="input">source_indexer</target>
         </edge>
         <edge>
-                <source socket="index">embedding</source>
+                <source socket="index">target_embedding</source>
                 <target socket="index">source_indexer</target>
         </edge>
         <component name="target_indexer" type="Indexer">
             <input_type>sequence</input_type>
         </component>
         <edge>
-                <source socket="output">target_reader</source>
+                <source socket="output">target_batcher</source>
                 <target socket="input">target_indexer</target>
         </edge>
         <edge>
@@ -149,28 +162,35 @@
         </edge>
 
         <component name="training_rnn" type="ScheduledSamplingRnn" language="tensorflow">
+            <stop_token>1</stop_token>
             <graph canvas="decoder">decoder-graph</graph>
             <socket type="in">embedding_vectors</socket>
             <socket type="in">sentence_embeddings</socket>
+            <socket type="in">sentence_gates</socket>
             <socket type="in">sentence_indexes</socket>
             <socket type="in">encoder_final_state</socket>
             <socket type="out">logits</socket>
             <in_link feed="per_batch">sentence_embeddings->encoded_sequence:input</in_link>
+            <in_link feed="per_batch">sentence_gates->encoded_sequence_gates:input</in_link>
             <in_link feed="per_batch">sentence_indexes->source_sequence_indexes:input</in_link>
             <in_link>embedding_vectors->encoder_embedding:vectors</in_link>
-            <out_link feed="loop">decoder_output:output->logits</out_link>
+            <out_link feed="loop">decoder_print:output->logits</out_link>
             <recurrence init="zero_tensor:100">decoder_lstm:output_c->previous_c:input</recurrence>
             <recurrence init="zero_tensor:100">attention:output->previous_attention:input</recurrence>
             <recurrence init="socket:encoder_final_state">decoder_lstm:output_h->previous_h:input</recurrence>
             <recurrence init="zero_tensor:|int" teacher="true">argmax:output->input_token:input</recurrence>
         </component>
         <edge>
-                <source socket="vectors">embedding</source>
+                <source socket="vectors">target_embedding</source>
                 <target socket="embedding_vectors">training_rnn</target>
         </edge>
         <edge>
                 <source socket="output">encoder</source>
                 <target socket="sentence_embeddings">training_rnn</target>
+        </edge>
+        <edge>
+                <source socket="output">gate_print</source>
+                <target socket="sentence_gates">training_rnn</target>
         </edge>
         <edge>
                 <source socket="output">source_indexer</source>
@@ -186,7 +206,6 @@
         </edge>
 
         <component name="loss" type="SequenceCrossEntropy" language="tensorflow">
-            <mark socket="output">loss</mark>
         </component>
         <edge>
                 <source socket="logits">training_rnn</source>
@@ -196,39 +215,86 @@
                 <source socket="output">target_indexer</source>
                 <target socket="labels">loss</target>
         </edge>
+
+        <component name="reg" type="Sum" language="tensorflow">
+            <axis>1</axis>
+        </component>
+        <edge>
+                <source socket="output">gate_print</source>
+                <target socket="input">reg</target>
+        </edge>
+
+        <component name="word_gate_reg_scale" type="Constant" language="tensorflow">
+            <value>0.4</value>
+            <type>float</type>
+        </component>
+
+        <component name="word_gate_reg_scale_mul" type="Arithmetic" language="tensorflow">
+            <operation>mul</operation>
+        </component>
+        <edge>
+                <source socket="output">word_gate_reg_scale</source>
+                <target socket="left">word_gate_reg_scale_mul</target>
+        </edge>
+        <edge>
+                <source socket="output">reg</source>
+                <target socket="right">word_gate_reg_scale_mul</target>
+        </edge>
+
+        <component name="loss_and_reg" type="Arithmetic" language="tensorflow">
+            <operation>add</operation>
+            <mark socket="output">loss</mark>
+        </component>
+        <edge>
+                <source socket="output">loss</source>
+                <target socket="left">loss_and_reg</target>
+        </edge>
+        <edge>
+                <source socket="output">word_gate_reg_scale_mul</source>
+                <target socket="right">loss_and_reg</target>
+        </edge>
+
         <component name="adam_upd" type="AdamUpdater" language="tensorflow">
             <learning_rate>0.001</learning_rate>
             <gradient_clip>1.0</gradient_clip>
             <mark socket="update">update</mark>
         </component>
         <edge>
-                <source socket="output">loss</source>
+                <source socket="output">loss_and_reg</source>
                 <target socket="loss">adam_upd</target>
         </edge>
 
         <component name="beam_search" type="BeamSearchDecoder" language="tensorflow">
             <n_beams>3</n_beams>
+            <output_top_n>1</output_top_n>
+            <stop_token>1</stop_token>
             <graph canvas="decoder">decoder-graph</graph>
             <socket type="in">embedding_vectors</socket>
             <socket type="in">sentence_embeddings</socket>
+            <socket type="in">sentence_gates</socket>
             <socket type="in">sentence_indexes</socket>
             <socket type="in">encoder_final_state</socket>
             <vocabulary_size>$full_vocabulary_size</vocabulary_size>
             <in_link feed="per_batch">sentence_embeddings->encoded_sequence:input</in_link>
+            <in_link feed="per_batch">sentence_gates->encoded_sequence_gates:input</in_link>
             <in_link feed="per_batch">sentence_indexes->source_sequence_indexes:input</in_link>
             <in_link>embedding_vectors->encoder_embedding:vectors</in_link>
             <recurrence init="zero_tensor:100">decoder_lstm:output_c->previous_c:input</recurrence>
             <recurrence init="zero_tensor:100">attention:output->previous_attention:input</recurrence>
             <recurrence init="socket:encoder_final_state">decoder_lstm:output_h->previous_h:input</recurrence>
-            <beam>decoder_output:output->input_token:input</beam>
+            <beam>decoder_print:output->input_token:input</beam>
         </component>
         <edge>
-                <source socket="vectors">embedding</source>
+                <source socket="vectors">target_embedding</source>
                 <target socket="embedding_vectors">beam_search</target>
         </edge>
         <edge>
                 <source socket="output">encoder</source>
                 <target socket="sentence_embeddings">beam_search</target>
+        </edge>
+        <edge>
+                <source socket="output">gate_print</source>
+                <target socket="sentence_gates">beam_search</target>
         </edge>
         <edge>
                 <source socket="output">source_indexer</source>
@@ -248,7 +314,7 @@
                 <target socket="input">deindexer</target>
         </edge>
         <edge>
-                <source socket="index">embedding</source>
+                <source socket="index">target_embedding</source>
                 <target socket="index">deindexer</target>
         </edge>
     </canvas>
@@ -264,6 +330,8 @@
             </component>
 
             <component name="encoded_sequence" type="PassThrough" language="tensorflow">
+            </component>
+            <component name="encoded_sequence_gates" type="PassThrough" language="tensorflow">
             </component>
             <component name="source_sequence_indexes" type="PassThrough" language="tensorflow">
             </component>
@@ -367,11 +435,23 @@
                 <target socket="input">word_to_pred_projection</target>
             </edge>
 
+            <component name="pointer_gates" type="Arithmetic" language="tensorflow">
+            <operation>mul</operation>
+            </component>
+            <edge>
+                <source socket="output">encoded_sequence_gates</source>
+                <target socket="left">pointer_gates</target>
+            </edge>
+            <edge>
+                <source socket="output">word_to_pred_projection</source>
+                <target socket="right">pointer_gates</target>
+            </edge>
+
             <component name="ptr_decoder" type="PointerDecoder" language="tensorflow">
                 <vocabulary_size>$full_vocabulary_size</vocabulary_size>
             </component>
             <edge>
-                <source socket="output">word_to_pred_projection</source>
+                <source socket="output">pointer_gates</source>
                 <target socket="word_logits">ptr_decoder</target>
             </edge>
             <edge>
@@ -393,6 +473,13 @@
             <edge>
                 <source socket="output">switch_mlp</source>
                 <target socket="switch_input">decoder_output</target>
+            </edge>
+
+            <component name="decoder_print" type="DebugPrint" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">decoder_output</source>
+                <target socket="input">decoder_print</target>
             </edge>
 
             <component name="softmax" type="Softmax" language="tensorflow">
