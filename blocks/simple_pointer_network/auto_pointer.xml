@@ -174,7 +174,7 @@
             <in_link feed="per_batch">sentence_gates->encoded_sequence_gates:input</in_link>
             <in_link feed="per_batch">sentence_indexes->source_sequence_indexes:input</in_link>
             <in_link>embedding_vectors->encoder_embedding:vectors</in_link>
-            <out_link feed="loop">decoder_print:output->logits</out_link>
+            <out_link feed="loop">decoder_output:output->logits</out_link>
             <recurrence init="zero_tensor:100">decoder_lstm:output_c->previous_c:input</recurrence>
             <recurrence init="zero_tensor:100">attention:output->previous_attention:input</recurrence>
             <recurrence init="socket:encoder_final_state">decoder_lstm:output_h->previous_h:input</recurrence>
@@ -282,7 +282,7 @@
             <recurrence init="zero_tensor:100">decoder_lstm:output_c->previous_c:input</recurrence>
             <recurrence init="zero_tensor:100">attention:output->previous_attention:input</recurrence>
             <recurrence init="socket:encoder_final_state">decoder_lstm:output_h->previous_h:input</recurrence>
-            <beam>decoder_print:output->input_token:input</beam>
+            <beam>decoder_output:output->input_token:input</beam>
         </component>
         <edge>
                 <source socket="vectors">target_embedding</source>
@@ -400,6 +400,13 @@
                 <target socket="input">decoder_mlp_pad</target>
             </edge>
 
+            <component name="vocab_softplus" type="Softplus" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">decoder_mlp_pad</source>
+                <target socket="input">vocab_softplus</target>
+            </edge>
+
             <component name="switch_mlp" type="MultilayerPerceptron" language="tensorflow">
             <dimensions>100,1</dimensions>
             </component>
@@ -447,6 +454,13 @@
                 <target socket="right">pointer_gates</target>
             </edge>
 
+            <component name="pointer_softplus" type="Softplus" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">pointer_gates</source>
+                <target socket="input">pointer_softplus</target>
+            </edge>
+
             <component name="ptr_decoder" type="PointerDecoder" language="tensorflow">
                 <vocabulary_size>$full_vocabulary_size</vocabulary_size>
             </component>
@@ -459,11 +473,18 @@
                 <target socket="word_indexes">ptr_decoder</target>
             </edge>
 
+            <component name="word_dec_print" type="DebugPrint" language="tensorflow">
+            </component>
+            <edge>
+                <source socket="output">ptr_decoder</source>
+                <target socket="input">word_dec_print</target>
+            </edge>
+
             <component name="decoder_output" type="Switch" language="tensorflow">
                 <switch_input_type>logits</switch_input_type>
             </component>
             <edge>
-                <source socket="output">ptr_decoder</source>
+                <source socket="output">word_dec_print</source>
                 <target socket="left">decoder_output</target>
             </edge>
             <edge>
