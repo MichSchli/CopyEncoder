@@ -31,6 +31,10 @@
             <default_value>1</default_value>
         </variable>
 
+        <variable name="n_max_relations">
+            <default_value>2</default_value>
+        </variable>
+
         <variable name="target_embedding_file">
             <default_value>vocabulary.txt</default_value>
         </variable>
@@ -118,6 +122,48 @@
         <edge>
             <source socket="output">word_gates</source>
             <target socket="input">gate_print</target>
+        </edge>
+
+        <component name="word_attn_over_relations" type="MultilayerPerceptron" language="tensorflow">
+            <dimensions>100,100,$n_max_relations</dimensions>
+        </component>
+        <edge>
+            <source socket="output">encoder</source>
+            <target socket="input">word_attn_over_relations</target>
+        </edge>
+        <component name="word_attn_over_relations_gate" type="Softmax" language="tensorflow">
+        </component>
+        <edge>
+            <source socket="output">word_attn_over_relations</source>
+            <target socket="input">word_attn_over_relations_gate</target>
+        </edge>
+
+        <component name="one" type="Constant" language="tensorflow">
+            <value>1.0</value>
+            <type>float</type>
+        </component>
+        <component name="inverted_word_gates" type="Arithmetic" language="tensorflow">
+            <operation>minus</operation>
+        </component>
+        <edge>
+                <source socket="output">one</source>
+                <target socket="left">inverted_word_gates</target>
+        </edge>
+        <edge>
+                <source socket="output">word_gates</source>
+                <target socket="right">inverted_word_gates</target>
+        </edge>
+
+        <component name="word_2_relation" type="Arithmetic" language="tensorflow">
+            <operation>mul</operation>
+        </component>
+        <edge>
+                <source socket="output">word_attn_over_relations_gate</source>
+                <target socket="left">word_2_relation</target>
+        </edge>
+        <edge>
+                <source socket="output">inverted_word_gates</source>
+                <target socket="right">word_2_relation</target>
         </edge>
 
         <component name="attention_input" type="Arithmetic" language="tensorflow">
